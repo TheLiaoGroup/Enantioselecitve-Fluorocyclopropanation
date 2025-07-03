@@ -1,0 +1,56 @@
+#Build a prediction model on enantioselectivity based on AutoGluon, ECFP is used to encode the reaction
+import pandas as pd
+from rdkit import Chem
+from rdkit.Chem import AllChem
+import numpy as np
+from autogluon.tabular import TabularDataset, TabularPredictor
+import time
+
+start_time = time.time()
+
+# Function to convert SMILES to molecular fingerprint
+def smiles_to_ECFP(smiles,n_bits):
+    if smiles is not None:
+        mol = Chem.MolFromSmiles(smiles)    
+        fp = AllChem.GetMorganFingerprintAsBitVect(mol, radius=2, nBits=n_bits)
+        return np.array(fp)
+    else:
+        return np.zeros(n_bits)
+        
+# Define a function to encode a reaction with ECFP
+def get_fingerprint_features(df, components):  
+    components_fp_list= []  
+    for i in components:
+        component_fp = np.array([smiles_to_ECFP(smiles,1024) for smiles in df[i]])
+        components_fp_list.append(component_fp)
+    components_fp=np.hstack(components_fp_list)
+    return components_fp
+
+# Read excel files
+df1 = pd.read_excel(r'G:\acceptor_HTE.xlsx',sheet_name='substrates_train').drop(columns=['ligands','catalysts'])
+df2 = pd.read_excel(r'G:\acceptor_HTE.xlsx',sheet_name='substrates_test').drop(columns=['ligands','catalysts'])    
+
+column_list=df1.columns.tolist()
+components=column_list[3:6]
+display(df1, df2)
+
+# Construct a training data set
+train_data=pd.DataFrame(get_fingerprint_features(df1, components))
+train_data['catalysts_index']=df1['catalysts_index']
+train_data['ee']=df1['ee']
+display(train_data)
+
+# Construct a test data set
+test_data=pd.DataFrame(get_fingerprint_features(df2, components))
+test_data['catalysts_index']=df2['catalysts_index']
+test_data['ee']=df2['ee']
+display(test_data)
+
+# Training, evalution and predition
+predictor = TabularPredictor(label='ee').fit(train_data)
+test_metrics=predictor.evaluate(test_data, silent=True)
+train_metrics=predictor.evaluate(train_data, silent=True)
+end_time = time.time()
+print('The metric of five fold cross validation:', train_metrics)
+print('The metric of test:', test_metrics)
+print(f'Need time {end_time-start_time} second')
