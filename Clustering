@@ -1,0 +1,61 @@
+## Determined the K value via elbow method
+import os
+os.environ["OMP_NUM_THREADS"] = '1'
+import pandas as pd
+import numpy as np
+from rdkit import Chem
+from rdkit.Chem import AllChem
+import matplotlib.pyplot as plt
+from sklearn.cluster import KMeans
+import time
+
+# Convert the SMILES to ECFP
+def smiles_to_fingerprint(smiles):
+    if smiles is not None:
+        mol = Chem.MolFromSmiles(smiles)
+        fp = AllChem.GetMorganFingerprintAsBitVect(mol, radius=2, nBits=1024)
+        return np.array(fp)
+    else:
+        return np.zeros(1024)
+
+# Build an array for clustering
+def get_fingerprint_features(df, sub):
+    features = np.array([smiles_to_fingerprint(smiles) for smiles in df[sub]])
+    return features
+
+# Caclulate the WCSS values under differnt K values
+df=pd.read_excel(r'Ligands list.xlsx')
+X = get_fingerprint_features (df, 'SMILES')
+
+wcss = []
+K = range(1, 30)
+for k in K:
+    kmeans = KMeans(n_clusters=k, init='k-means++', random_state=0)
+    kmeans.fit(X)
+    wcss.append(kmeans.inertia_)
+
+# Plotting
+plt.figure(figsize=(10, 6))
+plt.plot(K, wcss, marker='.', markersize=8)
+plt.xlabel('Cluster number')
+plt.ylabel('Within-cluster sum of squares')
+plt.title('Elbow method')
+plt.xticks(K)
+plt.savefig('Elbow method', dpi=600)
+plt.show()
+
+# Perform clustering according the elbow result
+cluster_num=int(input('please input the cluster number:'))
+kmeans = KMeans(n_clusters=cluster_num,random_state=0).fit(X) # changed the value according to the result of Elbow method
+df['Cluster_labels']=kmeans.labels_.tolist()
+distances = kmeans.transform(X)
+df1=pd.DataFrame(distances)
+df1['Cluster_labels']=kmeans.labels_.tolist()
+list_distances=[]
+for index, row in df1.iterrows():
+    column_index=row['Cluster_labels']
+    list_distances.append(row[column_index])
+df1['distances']=list_distances
+display(df1)
+df['distances']=list_distances
+df.to_excel(r'G:\clustering results.xlsx')
